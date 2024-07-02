@@ -16,7 +16,6 @@ server.use((req, res, next) => {
       address: "0.0.0.0",
     };
   } else {
-    console.log("Client IP:", ip);
     req.clientIp = ip;
   }
   next();

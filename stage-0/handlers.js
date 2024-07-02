@@ -4,7 +4,7 @@ dotenv.config();
 
 const handleHelloRequest = safelyRun(async (req, res) => {
   const clientIp = req.ip;
-  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp.replace(":ffff:", "");
+  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp.replace("::ffff:", "");
   const visitorName = req.query.visitor_name;
 
   if (!visitorName) {
@@ -27,6 +27,7 @@ const handleHelloRequest = safelyRun(async (req, res) => {
 
   const location = clientIp === "::1" ? "localhost" : ipApiData.city;
 
+    console.log("Client IP:", clientIp);
   return res.json({
     client_ip: clientIp,
     greeting,
