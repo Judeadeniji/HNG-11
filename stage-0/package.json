@@ -6,6 +6,10 @@
     "@types/bun": "latest",
     "@types/node": "^20.14.9"
   },
+  "scripts": {
+    "install": "bun install",
+    "start": "bun run index.ts"
+  },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },

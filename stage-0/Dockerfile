@@ -1,7 +1,8 @@
 FROM oven/bun:1
-WORKDIR /app
+WORKDIR /
 COPY . .
 RUN bun install
+STOPSIGNAL 0
  
 ARG PORT
 EXPOSE ${PORT:-3000}
