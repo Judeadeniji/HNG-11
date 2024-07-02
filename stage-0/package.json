@@ -10,7 +10,7 @@
     "typescript": "^5.0.0"
   },
   "engines": {
-    "node": "20.x"
+    "bun": "1.x"
   },
   "dependencies": {
     "@hono/node-server": "^1.11.5",
