@@ -4,7 +4,7 @@ dotenv.config();
 
 const handleHelloRequest = safelyRun(async (req, res) => {
   const clientIp = req.ip;
-  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp;
+  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp.replace(":ffff:", "");
   const visitorName = req.query.visitor_name;
 
   if (!visitorName) {
