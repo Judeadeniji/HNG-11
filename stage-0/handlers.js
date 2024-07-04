@@ -37,7 +37,7 @@ const handleHelloRequest = safelyRun(
 
     console.log("Client IP:", clientIp);
   return res.json({
-    client_ip: clientIp[clientIp.length - 1] || ipApiData.query
+    client_ip: clientIp[0] || ipApiData.query
     ,
     greeting,
     location,
