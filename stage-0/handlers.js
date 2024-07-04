@@ -12,14 +12,13 @@ const handleHelloRequest = safelyRun(
   async (req, res) => {
   const clientIp = req.ips;
   console.log(clientIp)
-  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp;
   const visitorName = req.query.visitor_name;
 
   if (!visitorName) {
     return res.status(400).json({ error: "visitor_name is required", status: false });
   }
 
-  const ipApiResponse = await fetch("http://ip-api.com/json/" + mockIp);
+  const ipApiResponse = await fetch("http://ip-api.com/json/" + clientIp[0]);
   const ipApiData = await ipApiResponse.json();
 
   const weatherApiResponse = await fetch(
@@ -35,7 +34,7 @@ const handleHelloRequest = safelyRun(
 
   const location = clientIp === "::1" ? "localhost" : ipApiData.city;
 
-    console.log("Client IP:", clientIp);
+    console.log("Client IP:", clientIp, );
   return res.json({
     client_ip: clientIp[0] || ipApiData.query
     ,
