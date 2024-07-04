@@ -2,9 +2,17 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const handleHelloRequest = safelyRun(async (req, res) => {
-  const clientIp = req.ip;
-  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp.replace("::ffff:", "");
+const handleHelloRequest = safelyRun(
+  /**
+   * 
+   * @param {import("express").Request} req 
+   * @param {import("express").Response} res 
+   * @returns 
+   */
+  async (req, res) => {
+  const clientIp = req.ips;
+  console.log(clientIp)
+  const mockIp = clientIp === "::1" ? "24.48.0.1" : clientIp;
   const visitorName = req.query.visitor_name;
 
   if (!visitorName) {
@@ -29,7 +37,8 @@ const handleHelloRequest = safelyRun(async (req, res) => {
 
     console.log("Client IP:", clientIp);
   return res.json({
-    client_ip: clientIp,
+    client_ip: clientIp[clientIp.length - 1] || ipApiData.query
+    ,
     greeting,
     location,
   });
