@@ -1,12 +1,18 @@
 import { Hono } from "hono/quick";
-import type { Bindings } from "hono/types";
+import type { Bindings, BlankSchema } from "hono/types";
 import type { Client } from "pg";
 import type { Variables } from "../app.types";
+import { authenticate } from "./auth.middleware";
 import { createClient } from "./db/pg";
 
 type AppEnv = { Bindings: Bindings, Variables: Variables }
 
 const server = new Hono<AppEnv>();
+
+const apiServer = new Hono<AppEnv, BlankSchema, "/api">();
+
+apiServer.use(authenticate);
+
 
 server.use(async (ctx, next) => {
   const [error, client] = await createClient(ctx.env as any);
@@ -22,4 +28,5 @@ server.use(async (ctx, next) => {
 });
 
 
-export { server, type AppEnv };
+export { apiServer, server, type AppEnv };
+

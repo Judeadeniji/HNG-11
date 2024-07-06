@@ -22,5 +22,10 @@ export type Bindings = {} & Env
 
 interface Variables {
   "pg-client": Client | null,
+	user: {
+		userId: string,
+		email: string,
+		exp: number,
+	},
   [key: string]: unknown
 }

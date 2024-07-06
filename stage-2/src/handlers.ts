@@ -1,13 +1,12 @@
 import bcrypt from 'bcryptjs';
 import type { Context } from 'hono';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'hono/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import type { User } from '../app.types';
 import type { AppEnv } from './server';
-import { loginPayloadSchema, userPayloadSchema } from './zod.schema';
+import { createOrganisationPayloadSchema, loginPayloadSchema, userPayloadSchema } from './zod.schema';
 
 export async function handleRegistration(ctx: Context<AppEnv>) {
-	console.log(ctx.env);
 	try {
 		const pgClient = ctx.get('pg-client')!;
 		const userPayload = (await ctx.req.json()) as User;
@@ -36,26 +35,26 @@ export async function handleRegistration(ctx: Context<AppEnv>) {
 		// Create user and default organisation
 		const userId = uuidv4();
 		const orgId = uuidv4();
-		await pgClient.query('INSERT INTO users (userId, firstName, lastName, email, password, phone) VALUES ($1, $2, $3, $4, $5, $6)', [
-			userId,
-			firstName,
-			lastName,
-			email,
-			hashedPassword,
-			phone,
+
+		await Promise.all([
+			pgClient.query('INSERT INTO users (userId, firstName, lastName, email, password, phone) VALUES ($1, $2, $3, $4, $5, $6)', [
+				userId,
+				firstName,
+				lastName,
+				email,
+				hashedPassword,
+				phone,
+			]),
+			pgClient.query('INSERT INTO organisations (orgId, name, description) VALUES ($1, $2, $3)', [
+				orgId,
+				`${firstName}'s Organisation`,
+				'',
+			]),
+			pgClient.query('INSERT INTO user_organisations (userId, orgId) VALUES ($1, $2)', [userId, orgId]),
 		]);
-		await pgClient.query('INSERT INTO organisations (orgId, name, description) VALUES ($1, $2, $3)', [
-			orgId,
-			`${firstName}'s Organisation`,
-			'',
-		]);
-		await pgClient.query('INSERT INTO user_organisations (userId, orgId) VALUES ($1, $2)', [userId, orgId]);
 
 		// Create JWT token
-		const token = jwt.sign({ userId, email }, null, {
-			expiresIn: ctx.env.JWT_EXPIRES_IN as string,
-			algorithm: 'none',
-		});
+		const token = await jwt.sign({ userId, email, exp: Math.floor(60 * 60 * 60 * 24) * 1000 }, ctx.env.JWT_SECRET as string);
 
 		return ctx.json(
 			{
@@ -127,10 +126,7 @@ export async function handleLogin(ctx: Context<AppEnv>) {
 		}
 
 		// Create JWT token
-		const token = jwt.sign({ userId: user.userId, email }, null, {
-			expiresIn: ctx.env.JWT_EXPIRES_IN as string,
-			algorithm: 'none',
-		});
+		const token = await jwt.sign({ userId: user.userid, email, exp: Math.floor(60 * 60 * 60 * 24) * 1000 }, ctx.env.JWT_SECRET as string);
 
 		return ctx.json({
 			status: 'success',
@@ -155,6 +151,265 @@ export async function handleLogin(ctx: Context<AppEnv>) {
 				error: (error as Error).message,
 			},
 			422
+		);
+	}
+}
+
+export async function handleGetSingleUser(ctx: Context<AppEnv, '/api/users/:id'>) {
+	try {
+		const pgClient = ctx.get('pg-client')!;
+		const userId = ctx.req.param('id');
+		const dbUserCheckRes = await pgClient.query('SELECT * FROM users WHERE userId = $1', [userId]);
+		if (dbUserCheckRes.rows.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad request',
+					message: 'User not found',
+					statusCode: 404,
+				},
+				404
+			);
+		}
+		const user = dbUserCheckRes.rows[0];
+		return ctx.json({
+			status: 'success',
+			message: 'User found',
+			data: {
+				user: {
+					userId: user.userid,
+					firstName: user.firstname,
+					lastName: user.lastname,
+					email: user.email,
+					phone: user.phone,
+				},
+			},
+		});
+	} catch (error) {
+		console.error(error);
+		return ctx.json(
+			{
+				status: 'error',
+				message: 'An error occurred',
+				error: (error as Error).message,
+			},
+			422
+		);
+	}
+}
+
+export async function handleGetAllOrganisations(ctx: Context<AppEnv, '/api/organisations'>) {
+	try {
+		const pgClient = ctx.get('pg-client')!;
+		const dbOrgsRes = await pgClient.query('SELECT * FROM organisations');
+		return ctx.json({
+			status: 'success',
+			message: 'Organisations found',
+			data: {
+				organisations: dbOrgsRes.rows.map((org) => ({
+					orgId: org.orgid,
+					name: org.name,
+					description: org.description,
+				})),
+			},
+		});
+	} catch (error) {
+		console.error(error);
+		return ctx.json(
+			{
+				status: 'error',
+				message: 'An error occurred',
+				error: (error as Error).message,
+			},
+			422
+		);
+	}
+}
+
+export async function handleGetSingleOrganisation(ctx: Context<AppEnv, '/api/organisatons/:orgId'>) {
+	try {
+		const pgClient = ctx.get('pg-client')!;
+		const orgId = ctx.req.param('orgId');
+		const dbOrgRes = await pgClient.query('SELECT * FROM organisations WHERE orgid = $1', [orgId]);
+		if (dbOrgRes.rows.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad request',
+					message: 'Organisation not found',
+					statusCode: 404,
+				},
+				404
+			);
+		}
+		const org = dbOrgRes.rows[0];
+		return ctx.json({
+			status: 'success',
+			message: 'Organisation found',
+			data: {
+				organisation: {
+					orgId: org.orgid,
+					name: org.name,
+					description: org.description,
+				},
+			},
+		});
+	} catch (error) {
+		console.error(error);
+		return ctx.json(
+			{
+				status: 'error',
+				message: 'An error occurred',
+				error: (error as Error).message,
+			},
+			422
+		);
+	}
+}
+
+export async function handleCreateOrganisation(ctx: Context<AppEnv, '/api/organisations'>) {
+	try {
+		const pgClient = ctx.get('pg-client')!;
+		const userId = ctx.get('user')!.userId;
+		const orgPayload = (await ctx.req.json()) as { name: string; description: string };
+		const { data, success } = createOrganisationPayloadSchema.safeParse(orgPayload);
+
+		if (!success) {
+			return ctx.json(
+				{
+					status: 'Bad Request',
+					message: 'Client error',
+					statusCode: 400,
+				},
+				400
+			);
+		}
+
+		const { name, description } = data;
+
+		const orgId = uuidv4();
+		await Promise.all([
+			pgClient.query('INSERT INTO organisations (orgid, name, description) VALUES ($1, $2, $3)', [orgId, name, description]),
+			pgClient.query('INSERT INTO user_organisations (userId, orgId) VALUES ($1, $2)', [userId, orgId]),
+		]);
+
+		return ctx.json(
+			{
+				status: 'success',
+				message: 'Organisation created successfully',
+				data: {
+					organisation: {
+						orgId,
+						name,
+						description,
+					},
+				},
+			},
+			201
+		);
+	} catch (error) {
+		console.error(error);
+		return ctx.json(
+			{
+				status: 'Bad Request',
+				message: 'Client error',
+				statusCode: 400,
+			},
+			400
+		);
+	}
+}
+
+export async function handleAddUserToOrganisation(ctx: Context<AppEnv, '/api/organisations/:orgId/users'>) {
+	try {
+		const pgClient = ctx.get('pg-client')!;
+		const orgId = ctx.req.param('orgId');
+		const { userId: userToAddId } = (await ctx.req.json()) as { userId: string };
+
+		const dbOrgRes = await pgClient.query('SELECT * FROM organisations WHERE orgid = $1', [orgId]);
+		if (dbOrgRes.rows.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad Request',
+					message: 'Client error',
+					statusCode: 400,
+				},
+				400
+			);
+		}
+		const dbUserRes = await pgClient.query('SELECT * FROM users WHERE userId = $1', [userToAddId]);
+		if (dbUserRes.rows.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad Request',
+					message: 'Client error',
+					statusCode: 400,
+				},
+				400
+			);
+		}
+		await pgClient.query('INSERT INTO user_organisations (userId, orgId) VALUES ($1, $2)', [userToAddId, orgId]);
+
+		return ctx.json(
+			{
+				status: 'success',
+				message: 'User added to organisation successfully',
+			},
+			201
+		);
+	} catch (error) {
+		console.error(error);
+		return ctx.json(
+			{
+				status: 'Bad Request',
+				message: 'Client error',
+				statusCode: 400,
+			},
+			400
+		);
+	}
+}
+
+// a little extra bonus handler
+export async function handleGetAllUsersInAOrganisation(ctx: Context<AppEnv, '/api/organisations/:orgId/users'>) {
+	try {
+		const pgClient = ctx.get('pg-client')!;
+		const orgId = ctx.req.param('orgId');
+		const dbOrgRes = await pgClient.query('SELECT * FROM organisations WHERE orgid = $1', [orgId]);
+		if (dbOrgRes.rows.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad Request',
+					message: 'Client error',
+					statusCode: 400,
+				},
+				400
+			);
+		}
+		const dbUsersRes = await pgClient.query(
+			'SELECT * FROM users WHERE userId IN (SELECT userId FROM user_organisations WHERE orgId = $1)',
+			[orgId]
+		);
+		return ctx.json({
+			status: 'success',
+			message: 'Users found',
+			data: {
+				users: dbUsersRes.rows.map((user) => ({
+					userId: user.userid,
+					firstName: user.firstname,
+					lastName: user.lastname,
+					email: user.email,
+					phone: user.phone,
+				})),
+			},
+		});
+	} catch (error) {
+		console.error(error);
+		return ctx.json(
+			{
+				status: 'Bad Request',
+				message: 'Client error',
+				statusCode: 400,
+			},
+			400
 		);
 	}
 }
