@@ -48,7 +48,7 @@ export async function handleRegistration(ctx: Context<AppEnv>) {
 			pgClient.query('INSERT INTO organisations (orgId, name, description) VALUES ($1, $2, $3)', [
 				orgId,
 				`${firstName}'s Organisation`,
-				'',
+				`Default organisation for ${firstName} ${lastName}`,
 			]),
 			pgClient.query('INSERT INTO user_organisations (userId, orgId) VALUES ($1, $2)', [userId, orgId]),
 		]);
