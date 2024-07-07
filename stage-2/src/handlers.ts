@@ -159,7 +159,54 @@ export async function handleGetSingleUser(ctx: Context<AppEnv, '/api/users/:id'>
 	try {
 		const pgClient = ctx.get('pg-client')!;
 		const userId = ctx.req.param('id');
+		const verifiedUser = ctx.get("user")!;
+		if (userId === verifiedUser.userId) {
+			const dbUserCheckRes = await pgClient.query('SELECT * FROM users WHERE userId = $1', [userId]);
+			if (dbUserCheckRes.rows.length === 0) {
+				return ctx.json(
+					{
+						status: 'Bad request',
+						message: 'User not found',
+						statusCode: 404,
+					},
+					404
+				);
+			}
+			const user = dbUserCheckRes.rows[0];
+			return ctx.json({
+				status: 'success',
+				message: 'User found',
+				data: {
+					user: {
+						userId: user.userid,
+						firstName: user.firstname,
+						lastName: user.lastname,
+						email: user.email,
+						phone: user.phone,
+					},
+				},
+			});
+		}
+
+		// Check if user is in the same organisation as verifiedUser
+		const dbUserOrgRes = await pgClient.query('SELECT * FROM user_organisations WHERE userId = $1', [userId]);
+		const dbVerifiedUserOrgRes = await pgClient.query('SELECT * FROM user_organisations WHERE userId = $1', [verifiedUser.userId]);
+		const userOrgs = dbUserOrgRes.rows.map((row) => row.orgid);
+		const verifiedUserOrgs = dbVerifiedUserOrgRes.rows.map((row) => row.orgid);
+		const commonOrgs = userOrgs.filter((org) => verifiedUserOrgs.includes(org));
+		if (commonOrgs.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad request',
+					message: 'User not found',
+					statusCode: 404,
+				},
+				404
+			);
+		}
+
 		const dbUserCheckRes = await pgClient.query('SELECT * FROM users WHERE userId = $1', [userId]);
+
 		if (dbUserCheckRes.rows.length === 0) {
 			return ctx.json(
 				{
@@ -200,7 +247,11 @@ export async function handleGetSingleUser(ctx: Context<AppEnv, '/api/users/:id'>
 export async function handleGetAllOrganisations(ctx: Context<AppEnv, '/api/organisations'>) {
 	try {
 		const pgClient = ctx.get('pg-client')!;
-		const dbOrgsRes = await pgClient.query('SELECT * FROM organisations');
+		const verifiedUser = ctx.get("user")!;
+		// get all the organisations the user is part of
+		const dbOrgsRes = await pgClient.query('SELECT * FROM organisations WHERE orgid IN (SELECT orgid FROM user_organisations WHERE userid = $1)', [
+			verifiedUser.userId,
+		]);
 		return ctx.json({
 			status: 'success',
 			message: 'Organisations found',
@@ -286,7 +337,7 @@ export async function handleCreateOrganisation(ctx: Context<AppEnv, '/api/organi
 		const pgClient = ctx.get('pg-client')!;
 		const userId = ctx.get('user')!.userId;
 		const orgPayload = (await ctx.req.json()) as { name: string; description: string };
-		const { data, success, error } = createOrganisationPayloadSchema.safeParse(orgPayload);
+		const { data, success } = createOrganisationPayloadSchema.safeParse(orgPayload);
 
 		if (!success) {
 			return ctx.json(
