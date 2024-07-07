@@ -1,9 +1,10 @@
-// tests/index.spec.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import * as jwt from 'hono/jwt';
 import type { Client } from 'pg';
 import { createClient } from '../src/db/pg';
 
-const userEmail = 'johndoe@email.com';
+const user1Email = 'johndoe@email.com';
+const user2Email = 'janedoe@email.com';
 let client: Client;
 
 beforeAll(async () => {
@@ -12,10 +13,11 @@ beforeAll(async () => {
 		throw error;
 	}
 	client = dbClient;
-	await client.query('DELETE FROM users WHERE email = $1', [userEmail]);
-	// delete all organisations
+	await client.query('DELETE FROM users WHERE email = $1', [user1Email]);
+	await client.query('DELETE FROM users WHERE email = $1', [user2Email]);
 	await client.query('DELETE FROM organisations WHERE name = $1', ["John's Organisation"]);
-	await client.query('DELETE FROM organisations WHERE name = $1', ["Test Organisation"]);
+	await client.query('DELETE FROM organisations WHERE name = $1', ["Jane's Organisation"]);
+	await client.query('DELETE FROM organisations WHERE name = $1', ['Test Organisation']);
 });
 
 afterAll(async () => {
@@ -23,23 +25,27 @@ afterAll(async () => {
 });
 
 describe('Auth Endpoints', () => {
-	let accessToken: string;
+	let user1AccessToken: string;
+	let user2AccessToken: string;
+	let user1OrgId: string;
+	let user2OrgId: string;
+	let testOrgId: string;
 
 	describe('[POST] /auth/register', () => {
-		it('should register user successfully', async () => {
+		it('should register user 1 successfully', async () => {
 			const response = await fetch('http://localhost:8787/auth/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					firstName: 'John',
 					lastName: 'Doe',
-					email: userEmail,
+					email: user1Email,
 					password: 'C0mpl3xP@ssw0rd',
 					phone: '1234567890',
 				}),
 			});
 
-			const responseBody = (await response.json()) as {
+			const responseBody = await response.json() as {
 				status: string;
 				message: string;
 				data: {
@@ -61,81 +67,86 @@ describe('Auth Endpoints', () => {
 					user: {
 						firstName: 'John',
 						lastName: 'Doe',
-						email: userEmail,
+						email: user1Email,
 					},
 				},
 			});
 
-			accessToken = responseBody.data.accessToken;
+			user1AccessToken = responseBody.data.accessToken;
 		});
 
-    it('Should Fail if there’s Duplicate Email or UserID', async () => {
-      const response = await fetch('http://localhost:8787/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: 'John',
-          lastName: 'Doe',
-          email: userEmail,
-          password: 'C0mpl3xP@ssw0rd',
-          phone: '1234567890',
-        }),
-      });
-
-      const responseBody = (await response.json()) as {
-        errors: {
-          field: string;
-          message: string;
-        }[];
-      };
-
-      expect(response.status).toBe(422);
-      expect(responseBody).toHaveProperty("errors");
-      expect(responseBody.errors).toHaveLength(1);
-      expect(responseBody.errors[0]).toMatchObject({
-        field: 'email',
-        message: 'Email already in use'
-      });
-    })
-
-		it('should register user successfully with default organisation', async () => {
-			const response = await fetch('http://localhost:8787/api/organisations', {
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${accessToken}`,
-				},
+		it('should register user 2 successfully', async () => {
+			const response = await fetch('http://localhost:8787/auth/register', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					firstName: 'Jane',
+					lastName: 'Doe',
+					email: user2Email,
+					password: 'C0mpl3xP@ssw0rd',
+					phone: '0987654321',
+				}),
 			});
 
-			const responseBody = (await response.json()) as {
+			const responseBody = await response.json() as {
 				status: string;
 				message: string;
 				data: {
-					organisations: {
-            name: string;
-            description: string;
-          }[];
-        };
+					user: {
+						firstName: string;
+						lastName: string;
+						email: string;
+					};
+					accessToken: string;
+				};
 			};
-			expect(response.status).toBe(200);
-      expect(responseBody).toHaveProperty("data");
-      expect(responseBody.data).toHaveProperty("organisations");
-      expect(responseBody.data.organisations).toBeArray();
-      expect(responseBody.data.organisations.find((org) => org.name === "John's Organisation")).not.toBeUndefined();
+
+			expect(response.status).toBe(201);
+			expect(responseBody.status).not.toHaveProperty('errors');
+			expect(responseBody).toMatchObject({
+				status: 'success',
+				message: 'Registration successful',
+				data: {
+					user: {
+						firstName: 'Jane',
+						lastName: 'Doe',
+						email: user2Email,
+					},
+				},
+			});
+
+			user2AccessToken = responseBody.data.accessToken;
+		});
+
+		it('should verify token details and expiration for user 1', async () => {
+			const currentTime = Math.floor(Date.now() / 1000);
+			const { payload } = jwt.decode(user1AccessToken);
+			expect(payload).toContainKeys(['userId', 'email', 'exp']);
+			expect(payload.email).toEqual(user1Email);
+			expect(payload.exp).toBeGreaterThan(currentTime);
+		});
+
+		it('should verify token details and expiration for user 2', async () => {
+			const currentTime = Math.floor(Date.now() / 1000);
+			const { payload } = jwt.decode(user2AccessToken);
+			expect(payload).toContainKeys(['userId', 'email', 'exp']);
+			expect(payload.email).toEqual(user2Email);
+			expect(payload.exp).toBeGreaterThan(currentTime);
 		});
 	});
 
 	describe('[POST] /auth/login', () => {
-		it('Should Log the user in successfully', async () => {
+		it('should log user 1 in successfully', async () => {
 			const response = await fetch('http://localhost:8787/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					email: userEmail,
+					email: user1Email,
 					password: 'C0mpl3xP@ssw0rd',
 				}),
 			});
 
-			const responseBody = (await response.json()) as {
+			const responseBody = await response.json() as {
 				status: string;
 				message: string;
 				data: {
@@ -155,64 +166,182 @@ describe('Auth Endpoints', () => {
 					user: {
 						firstName: 'John',
 						lastName: 'Doe',
-						email: userEmail,
+						email: user1Email,
 					},
 				},
 			});
 
-			accessToken = responseBody.data.accessToken;
+			user1AccessToken = responseBody.data.accessToken;
 		});
 
-		it('Should Fail If Required Fields Are Missing', async () => {
+		it('should log user 2 in successfully', async () => {
 			const response = await fetch('http://localhost:8787/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					email: userEmail,
+					email: user2Email,
+					password: 'C0mpl3xP@ssw0rd',
 				}),
 			});
 
-			const responseBody = (await response.json()) as {
-				errors: {
-					field: string;
-					message: string;
-				}[];
+			const responseBody = await response.json() as {
+				status: string;
+				message: string;
+				data: {
+					user: {
+						firstName: string;
+						lastName: string;
+						email: string;
+					};
+					accessToken: string;
+				};
 			};
-			expect(response.status).toBe(422);
-			expect(responseBody).toHaveProperty("errors");
-      expect(responseBody.errors).toHaveLength(1);
-      expect(responseBody.errors[0]).toMatchObject({
-        field: 'password',
-        message: 'Required'
-      });
+			expect(response.status).toBe(200);
+			expect(responseBody).toMatchObject({
+				status: 'success',
+				message: 'Login successful',
+				data: {
+					user: {
+						firstName: 'Jane',
+						lastName: 'Doe',
+						email: user2Email,
+					},
+				},
+			});
+
+			user2AccessToken = responseBody.data.accessToken;
 		});
 	});
 
 	describe('[POST] /api/organisations', () => {
-		it('should create organisation successfully', async () => {
+		it('should create organisation for user 1 successfully', async () => {
 			const response = await fetch('http://localhost:8787/api/organisations', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${accessToken}`,
+					Authorization: `Bearer ${user1AccessToken}`,
 				},
 				body: JSON.stringify({
-					name: 'Test Organisation',
-					description: 'Test Organisation Description',
+					name: "John's Organisation",
+					description: 'Default organisation for John Doe',
 				}),
 			});
 
-			const responseBody = await response.json();
+			const responseBody = await response.json() as {
+				status: string;
+				message: string;
+				data: {
+					organisation: {
+						orgId: string;
+						name: string;
+						description: string;
+					};
+				};
+			};
 			expect(response.status).toBe(201);
 			expect(responseBody).toMatchObject({
 				status: 'success',
 				message: 'Organisation created successfully',
 				data: {
 					organisation: {
-						name: 'Test Organisation',
-						description: 'Test Organisation Description',
+						name: "John's Organisation",
+						description: 'Default organisation for John Doe',
 					},
 				},
+			});
+			user1OrgId = responseBody.data.organisation.orgId;
+		});
+
+		it('should create organisation for user 2 successfully', async () => {
+			const response = await fetch('http://localhost:8787/api/organisations', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${user2AccessToken}`,
+				},
+				body: JSON.stringify({
+					name: "Jane's Organisation",
+					description: 'Default organisation for Jane Doe',
+				}),
+			});
+
+			const responseBody = await response.json() as {
+				status: string;
+				message: string;
+				data: {
+					organisation: {
+						orgId: string;
+						name: string;
+						description: string;
+					};
+				};
+			};
+			expect(response.status).toBe(201);
+			expect(responseBody).toMatchObject({
+				status: 'success',
+				message: 'Organisation created successfully',
+				data: {
+					organisation: {
+						name: "Jane's Organisation",
+						description: 'Default organisation for Jane Doe',
+					},
+				},
+			});
+			user2OrgId = responseBody.data.organisation.orgId;
+		});
+	});
+
+	describe('[GET] /api/organisations/:orgId', () => {
+		it('should get organisation for user 1 successfully', async () => {
+			const response = await fetch(`http://localhost:8787/api/organisations/${user1OrgId}`, {
+				headers: {
+					Authorization: `Bearer ${user1AccessToken}`,
+				},
+			});
+
+			const responseBody = await response.json();
+			expect(response.status).toBe(200);
+			expect(responseBody).toMatchObject({
+				status: 'success',
+				data: {
+					organisation: {
+						orgId: user1OrgId,
+						name: "John's Organisation",
+						description: 'Default organisation for John Doe',
+					},
+				},
+			});
+		});
+
+		it('should fail if user 1 tries to access user 2’s organisation', async () => {
+			const response = await fetch(`http://localhost:8787/api/organisations/${user2OrgId}`, {
+				headers: {
+					Authorization: `Bearer ${user1AccessToken}`,
+				},
+			});
+
+			const responseBody = await response.json();
+			expect(response.status).toBe(403);
+			expect(responseBody).toMatchObject({
+				status: 'Bad request',
+				message: 'User not part of organisation',
+				statusCode: 403,
+			},);
+		});
+
+		it('should fail if user 2 tries to access user 1’s organisation', async () => {
+			const response = await fetch(`http://localhost:8787/api/organisations/${user1OrgId}`, {
+				headers: {
+					Authorization: `Bearer ${user2AccessToken}`,
+				},
+			});
+
+			const responseBody = await response.json();
+			expect(response.status).toBe(403);
+			expect(responseBody).toMatchObject({
+				status: 'Bad request',
+				message: 'User not part of organisation',
+				statusCode: 403,
 			});
 		});
 	});

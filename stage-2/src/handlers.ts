@@ -54,7 +54,7 @@ export async function handleRegistration(ctx: Context<AppEnv>) {
 		]);
 
 		// Create JWT token
-		const token = await jwt.sign({ userId, email, exp: Math.floor(60 * 60 * 60 * 24) * 1000 }, ctx.env.JWT_SECRET as string);
+		const token = await jwt.sign({ userId, email, exp: Math.floor(Date.now() / 1000) + 60 * 5, /* 5 minutes */ }, ctx.env.JWT_SECRET as string);
 
 		return ctx.json(
 			{
@@ -229,6 +229,9 @@ export async function handleGetSingleOrganisation(ctx: Context<AppEnv, '/api/org
 	try {
 		const pgClient = ctx.get('pg-client')!;
 		const orgId = ctx.req.param('orgId');
+		const verifiedUser = ctx.get('user')!;
+
+		// Check for existing organisation and make sure users can't access other organisations they are not part of
 		const dbOrgRes = await pgClient.query('SELECT * FROM organisations WHERE orgid = $1', [orgId]);
 		if (dbOrgRes.rows.length === 0) {
 			return ctx.json(
@@ -240,7 +243,20 @@ export async function handleGetSingleOrganisation(ctx: Context<AppEnv, '/api/org
 				404
 			);
 		}
+		const dbUserOrgRes = await pgClient.query('SELECT * FROM user_organisations WHERE userId = $1 AND orgId = $2', [verifiedUser.userId, orgId]);
+		if (dbUserOrgRes.rows.length === 0) {
+			return ctx.json(
+				{
+					status: 'Bad request',
+					message: 'User not part of organisation',
+					statusCode: 403,
+				},
+				403
+			);
+		}
+
 		const org = dbOrgRes.rows[0];
+
 		return ctx.json({
 			status: 'success',
 			message: 'Organisation found',
@@ -270,7 +286,7 @@ export async function handleCreateOrganisation(ctx: Context<AppEnv, '/api/organi
 		const pgClient = ctx.get('pg-client')!;
 		const userId = ctx.get('user')!.userId;
 		const orgPayload = (await ctx.req.json()) as { name: string; description: string };
-		const { data, success } = createOrganisationPayloadSchema.safeParse(orgPayload);
+		const { data, success, error } = createOrganisationPayloadSchema.safeParse(orgPayload);
 
 		if (!success) {
 			return ctx.json(

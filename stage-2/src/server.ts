@@ -5,7 +5,7 @@ import type { Variables } from "../app.types";
 import { authenticate } from "./auth.middleware";
 import { createClient } from "./db/pg";
 
-type AppEnv = { Bindings: Bindings, Variables: Variables }
+type AppEnv = { Bindings: Bindings & Env, Variables: Variables }
 
 const server = new Hono<AppEnv>();
 

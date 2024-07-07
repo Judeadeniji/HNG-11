@@ -22,8 +22,6 @@ DB_NAME = "postgres"
 DB_USERNAME = "postgres.dmyldrxpkkrkktmqjrwr"
 DB_HOST = "aws-0-eu-central-1.pooler.supabase.com"
 DB_PORT = 6543
-JWT_EXPIRES_IN = "1d"
-
 
 # Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare’s global network
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#workers-ai
