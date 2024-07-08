@@ -1,4 +1,4 @@
-import { handleAddUserToOrganisation, handleCreateOrganisation, handleGetAllOrganisations, handleGetAllUsersInAOrganisation, handleGetSingleOrganisation, handleGetSingleUser, handleLogin, handleRegistration } from "../src/handlers";
+import { handleAddUserToOrganisation, handleCreateOrganisation, handleGetAllOrganisations, handleGetAllUsersInAOrganisation, handleGetSingleOrganisation, handleGetSingleUser, handleLogin, handleRegistration } from "../src/handlers.";
 import { apiServer, server } from "../src/server";
 
 // Auth routes

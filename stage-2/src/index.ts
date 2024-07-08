@@ -1,4 +1,4 @@
-import { server } from './routes';
+djimport { server } from './routes.';
 
 export default {
 	fetch: server.fetch,
